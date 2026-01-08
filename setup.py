@@ -28,6 +28,7 @@ setup(
             'go = intermediate.goto:main',
             'transform = intermediate.aruco_transform:main',
             'map_publisher = intermediate.map_publisher:main',
+            'exploration_map = intermediate.exploration_map:main'
         ],
     },
 )

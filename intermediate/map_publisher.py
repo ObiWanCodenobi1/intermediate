@@ -8,21 +8,27 @@ class MapPublisher(Node):
     def __init__(self):
         super().__init__('map_publisher')
         self.cli = self.create_client(GetOctomap, 'octomap_binary')
+        self._logger.info('created client')
         while not self.cli.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('service not available, waiting again...')
         self.req = GetOctomap.Request()
+        self._logger.info('created request')
 
         self.pub = self.create_publisher(Octomap,'/octomap',10)
-        timer_period =   # seconds
+        self._logger('created publisher')
+        timer_period = 1 # seconds
         self.timer = self.create_timer(timer_period, self.timer_callback)
+        self._logger('created timer')
     
     def timer_callback(self):
         future = self.cli.call_async(self.req)
         rclpy.spin_until_future_complete(self, future)
+        self.get_logger().info('sent request')
         if future.result() and future.result().success:
             result = future.result().message
             map = result.map
             self.pub.publish(map)
+            self._logger('published octomap')
         else:
             self.get_logger().error('Failed to call /octomap_binary service or service returned failure.')
 
