@@ -15,10 +15,10 @@ class MapPublisher(Node):
         self._logger.info('created request')
 
         self.pub = self.create_publisher(Octomap,'/octomap',10)
-        self._logger('created publisher')
+        self._logger.info('created publisher')
         timer_period = 1 # seconds
         self.timer = self.create_timer(timer_period, self.timer_callback)
-        self._logger('created timer')
+        self._logger.info('created timer')
     
     def timer_callback(self):
         future = self.cli.call_async(self.req)
