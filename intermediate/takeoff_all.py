@@ -8,7 +8,7 @@ class TakeoffClientAsync(Node):
 
     def __init__(self):
         super().__init__('takeoff_client_async')
-        self.NUM_DRONES = int(os.environ.get('NUM_ROBOTS', 10))
+        self.NUM_DRONES = int(os.environ.get('NUM_ROBOTS', 5))
         self.req = Takeoff.Request()
         self.req.height = 3.0
         self.takeoff_clients = {}

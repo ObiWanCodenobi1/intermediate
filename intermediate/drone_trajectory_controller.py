@@ -45,7 +45,8 @@ class DroneTrajectoryController(Node):
         self.NUM_DRONES = int(os.environ.get('NUM_ROBOTS', 10))
         self.MAX_COMM_DIST = 40
         self.SENSOR_RADIUS = 3
-        self.ocgrid3d = np.load('oc_grid.npy')
+        ocgrid_path = os.path.expanduser('~/ros2_ws/src/intermediate/intermediate/oc_grid.npy')
+        self.ocgrid3d = np.load(ocgrid_path)
         self.HEIGHT = 3
         _, _, self.HEIGHT_IDX = self.world2grid(0, 0, self.HEIGHT)
         self.ocgrid = self.ocgrid3d[:, :, self.HEIGHT_IDX]
