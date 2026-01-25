@@ -29,7 +29,8 @@ setup(
             'transform = intermediate.aruco_transform:main',
             'map_publisher = intermediate.map_publisher:main',
             'exploration_map = intermediate.exploration_map:main',
-            'drone_trajectory_controller = intermediate.drone_trajectory_controller:main'
+            'drone_trajectory_controller = intermediate.drone_trajectory_controller:main',
+            'takeoff_all = intermediate.takeoff_all:main'
         ],
     },
 )
