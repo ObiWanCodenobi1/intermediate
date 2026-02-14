@@ -12,7 +12,7 @@ from scipy.ndimage import binary_dilation, label, center_of_mass
 
 class Frontier_Detection(Node):
     def __init__(self):
-        super().__init__('drone_trajectory_controller')
+        super().__init__('frontier_detection')
 
         self.NUM_DRONES = int(os.environ.get('NUM_ROBOTS', 10))
         self.SENSOR_RADIUS = 6
