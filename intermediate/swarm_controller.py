@@ -2,27 +2,27 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 from visualization_msgs.msg import MarkerArray, Marker
-from geometry_msgs.msg import Pose, PoseStamped, Twist
+from geometry_msgs.msg import Pose, PoseStamped, Twist, Point, Vector3
+from std_msgs.msg import ColorRGBA
 from custom_interfaces.msg import Target, Targets
 import numpy as np
 import os
 import math
-from scipy.ndimage import binary_dilation
 
 class APF_Swarm_Controller(Node):
     def __init__(self):
         super().__init__('apf_swarm_controller')
 
-        # --- Constants from Paper (Tuned for Simulation) ---
-        self.D_S = 1.0   # Safety distance (meters) [cite: 97]
-        self.D_C = 3.0   # Max comms distance (meters) [cite: 96]
-        self.SIGMA = 0.5 # Marr Wavelet dispersion width [cite: 103]
-        self.K_SP = 0.1  # Shallow parabola gain [cite: 126]
-        self.K_GOAL = 1.0 # Goal attraction gain
-        self.K_OBS = 2.0  # Obstacle repulsion gain
-        self.MAX_VEL = 0.5 # Cap velocity [cite: 51]
+        # --- Constants from Paper ---
+        self.D_S = 1.0   # Safety distance [cite: 97]
+        self.D_C = 3.0   # Max comms distance [cite: 96]
+        self.SIGMA = 0.5 
+        self.K_SP = 0.1  
+        self.K_GOAL = 1.0 
+        self.K_OBS = 2.0  
+        self.MAX_VEL = 0.5 
         
-        # --- Existing Setup ---
+        # --- Setup ---
         self.NUM_DRONES = int(os.environ.get('NUM_ROBOTS', 5))
         ocgrid_path = os.path.expanduser('~/ros2_ws/src/intermediate/intermediate/oc_grid.npy')
         self.ocgrid3d = np.load(ocgrid_path)
@@ -45,29 +45,26 @@ class APF_Swarm_Controller(Node):
             )
 
         self.target_sub = self.create_subscription(Targets, 'targets', self.target_callback, 10)
-        self.targets = [] # List of (grid_x, grid_y)
+        self.targets = [] 
 
         self.cmd_publishers = {}
         for i in range(1, self.NUM_DRONES + 1):
             self.cmd_publishers[f"cf_{i}"] = self.create_publisher(Twist, f"/cf_{i}/cmd_vel", 10)
 
-        # Control Loop Timer
+        # --- Visualization Publisher ---
+        self.vis_pub = self.create_publisher(MarkerArray, '/swarm_viz', 10)
+
         self.timer = self.create_timer(0.1, self.control_loop)
 
     def grid2world(self, x, y, z=0):
-        # Converts grid indices to meters
         return ((x * self.res) - 66.5, (y * self.res) - 66.5, (z * self.res) + 0.5)
 
     def world2grid(self, x, y, z=0):
-        # Converts meters to grid indices
         return (int((x + 66.5) / self.res), int((y + 66.5) / self.res), int((z - 0.5) / self.res))
     
     def global_pose_callback(self, msg: PoseStamped, drone_id):
         q = msg.pose.orientation
         yaw = math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y**2 + q.z**2))
-        
-        # Store positions in WORLD frame (meters) for Physics calculations
-        # NOTE: Changed from original snippet to store World coords for easier APF math
         self.cf_poses[f"cf_{drone_id}"]["x"] = msg.pose.position.x
         self.cf_poses[f"cf_{drone_id}"]["y"] = msg.pose.position.y
         self.cf_poses[f"cf_{drone_id}"]["yaw"] = yaw
@@ -75,45 +72,30 @@ class APF_Swarm_Controller(Node):
     def target_callback(self, msg):
         self.targets = []
         for target in msg.targets:
-            # Store targets in WORLD frame
             self.targets.append((target.x, target.y))
 
-    # --- APF Helper Functions ---
-
+    # --- APF Logic (Same as before) ---
     def get_range_force(self, p1, p2):
-        """Calculates phi_range (Marr Wavelet + Shallow Parabola) """
         diff = p2 - p1
         dist = np.linalg.norm(diff)
         if dist == 0: return np.zeros(2)
-        
         direction = diff / dist
         force = np.zeros(2)
 
-        # 1. Marr Wavelet (Repulsion) if d < d_s [cite: 99]
+        # Marr Wavelet (Repulsion) [cite: 100]
         if dist < self.D_S:
-            # Gradient of Marr Wavelet
-            # Phi = (1 - d^2/sigma^2) * exp(-d^2 / 2sigma^2)
-            # F = -Gradient. Roughly pushes away significantly at close range.
-            # Simplified repulsive scaling for stability:
             mag = -1.0 * (1.0/dist - 1.0/self.D_S) 
             force = mag * direction
-
-        # 2. Shallow Parabola (Attraction) if d > d_c [cite: 126]
+        # Shallow Parabola (Attraction) [cite: 126]
         elif dist > self.D_C:
-            # Phi = k * d^2 -> Gradient = 2 * k * d
             mag = 2 * self.K_SP * (dist - self.D_C)
             force = mag * direction
             
-        # 3. Sweet spot (d_s <= d <= d_c) -> Force is 0 
-        
         return force
 
     def check_los(self, p1, p2):
-        """Raytrace on occupancy grid to check Line of Sight"""
-        # Convert world points to grid indices
         g1 = self.world2grid(p1[0], p1[1])
         g2 = self.world2grid(p2[0], p2[1])
-        
         x0, y0 = g1[0], g1[1]
         x1, y1 = g2[0], g2[1]
         
@@ -128,7 +110,7 @@ class APF_Swarm_Controller(Node):
             while x != x1:
                 if 0 <= x < self.ocgrid.shape[0] and 0 <= y < self.ocgrid.shape[1]:
                     if self.ocgrid[x, y] == 1:
-                        return False # Occlusion detected
+                        return False 
                 err -= dy
                 if err < 0:
                     y += sy
@@ -139,7 +121,7 @@ class APF_Swarm_Controller(Node):
             while y != y1:
                 if 0 <= x < self.ocgrid.shape[0] and 0 <= y < self.ocgrid.shape[1]:
                     if self.ocgrid[x, y] == 1:
-                        return False # Occlusion detected
+                        return False 
                 err -= dx
                 if err < 0:
                     x += sx
@@ -148,36 +130,23 @@ class APF_Swarm_Controller(Node):
         return True
 
     def get_los_force(self, p1, p2):
-        """Calculates phi_LOS perpendicular to occlusion """
         if self.check_los(p1, p2):
             return np.zeros(2)
-        
-        # If blocked, force is perpendicular to vector p1->p2
-        # to escape occlusion zone [cite: 152]
         vec = p2 - p1
-        # Perpendicular vector (-y, x)
-        perp = np.array([-vec[1], vec[0]])
+        perp = np.array([-vec[1], vec[0]]) # Perpendicular Force [cite: 154]
         perp = perp / np.linalg.norm(perp)
-        
-        # We need to know which way is "out". 
-        # Heuristic: Move towards the side with more free space or simply consistent rotation
-        # The paper suggests using occlusion lines. Simplification: Rotate 90 deg.
-        return perp * 1.5 # Arbitrary magnitude s
+        return perp * 1.5 
 
     def get_obstacle_force(self, pos):
-        """Standard local obstacle repulsion"""
         grid_pos = self.world2grid(pos[0], pos[1])
         force = np.zeros(2)
-        window = 5 # Check 5x5 grid around robot
-        
+        window = 5 
         gx, gy = grid_pos[0], grid_pos[1]
-        
         for i in range(-window, window+1):
             for j in range(-window, window+1):
                 nx, ny = gx + i, gy + j
                 if 0 <= nx < self.ocgrid.shape[0] and 0 <= ny < self.ocgrid.shape[1]:
                     if self.ocgrid[nx, ny] == 1:
-                        # Repulsive force
                         obs_world = np.array(self.grid2world(nx, ny)[:2])
                         diff = pos - obs_world
                         dist = np.linalg.norm(diff)
@@ -189,20 +158,22 @@ class APF_Swarm_Controller(Node):
         if not self.targets:
             return
 
-        # 1. Update Topology (Count connections) [cite: 175]
         drone_ids = list(self.cf_poses.keys())
         connections = {did: [] for did in drone_ids}
         positions = {}
+        
+        # Visualization Data Containers
+        viz_links = [] # List of (p1, p2) tuples
+        viz_forces = [] # List of (start_pos, vector) tuples
 
+        # 1. Update Topology
         for did in drone_ids:
             if self.cf_poses[did]["x"] is None: continue
             positions[did] = np.array([self.cf_poses[did]["x"], self.cf_poses[did]["y"]])
 
-        # Build connectivity graph based on Range AND LOS [cite: 180]
         for i in range(len(drone_ids)):
             id_a = drone_ids[i]
             if id_a not in positions: continue
-            
             for j in range(i+1, len(drone_ids)):
                 id_b = drone_ids[j]
                 if id_b not in positions: continue
@@ -210,64 +181,123 @@ class APF_Swarm_Controller(Node):
                 dist = np.linalg.norm(positions[id_a] - positions[id_b])
                 has_los = self.check_los(positions[id_a], positions[id_b])
                 
-                # Connection exists if within max range and LOS [cite: 31, 33]
+                # Check for valid connection [cite: 31, 33]
                 if dist <= self.D_C and has_los:
                     connections[id_a].append(id_b)
                     connections[id_b].append(id_a)
+                    # Add to viz
+                    viz_links.append((positions[id_a], positions[id_b]))
 
-        # 2. Compute Forces for each drone
+        # 2. Compute Forces
         for i, did in enumerate(drone_ids):
             if did not in positions: continue
-            
             p_curr = positions[did]
             
-            # A. Mission Forces (Goal + Obstacle)
-            target_idx = i % len(self.targets) # Assign target
+            target_idx = i % len(self.targets)
             p_goal = np.array(self.targets[target_idx])
             
             f_goal = (p_goal - p_curr)
-            # Normalize goal
             if np.linalg.norm(f_goal) > 0:
                 f_goal = (f_goal / np.linalg.norm(f_goal)) * self.K_GOAL
             
             f_obs = self.get_obstacle_force(p_curr)
-            
-            v_high_priority = f_goal + f_obs # [cite: 173]
+            v_high_priority = f_goal + f_obs 
 
-            # B. Communication Forces
             f_comm = np.zeros(2)
-            
-            # C. Parallel Composition Switch Logic 
             num_links = len(connections[did])
             
-            # "Switch": If redundant (>= 2 links), ignore comm constraints [cite: 178]
+            # Switch Logic [cite: 175, 178]
             if num_links >= 2:
                  final_vel = v_high_priority
             else:
-                # Not redundant: Compose with comm vectors 
-                # Calculate recovery forces for ALL other robots (simplified from 'best pair')
                 for other_did in drone_ids:
                     if did == other_did: continue
                     p_other = positions[other_did]
-                    
-                    # Range Force
                     f_comm += self.get_range_force(p_curr, p_other)
-                    
-                    # LOS Force (only if LOS is threatened/lost)
                     f_comm += self.get_los_force(p_curr, p_other)
-                
                 final_vel = v_high_priority + f_comm
 
-            # D. Cap Velocity [cite: 51]
+            # Cap Velocity [cite: 51]
             speed = np.linalg.norm(final_vel)
             if speed > self.MAX_VEL:
                 final_vel = (final_vel / speed) * self.MAX_VEL
 
-            # Publish
+            # Store for viz
+            viz_forces.append((p_curr, final_vel))
+
+            # Publish Control
             twist = Twist()
             twist.linear.x = float(final_vel[0])
             twist.linear.y = float(final_vel[1])
             self.cmd_publishers[did].publish(twist)
+
+        # 3. Trigger Visualization
+        self.publish_markers(positions, viz_links, viz_forces)
+
+    def publish_markers(self, positions, links, forces):
+        ma = MarkerArray()
+        id_counter = 0
+
+        # A. Draw Robots (Spheres)
+        for did, pos in positions.items():
+            m = Marker()
+            m.header.frame_id = "map"
+            m.header.stamp = self.get_clock().now().to_msg()
+            m.ns = "drones"
+            m.id = id_counter
+            id_counter += 1
+            m.type = Marker.SPHERE
+            m.action = Marker.ADD
+            m.pose.position.x = pos[0]
+            m.pose.position.y = pos[1]
+            m.pose.position.z = 0.5
+            m.scale = Vector3(x=0.3, y=0.3, z=0.3)
+            m.color = ColorRGBA(r=0.0, g=1.0, b=1.0, a=1.0) # Cyan
+            ma.markers.append(m)
+
+        # B. Draw Comm Links (Lines)
+        # We use one LINE_LIST marker for all links for efficiency
+        m_links = Marker()
+        m_links.header.frame_id = "map"
+        m_links.header.stamp = self.get_clock().now().to_msg()
+        m_links.ns = "comm_links"
+        m_links.id = 9999
+        m_links.type = Marker.LINE_LIST
+        m_links.action = Marker.ADD
+        m_links.scale.x = 0.05 # Line width
+        m_links.color = ColorRGBA(r=0.0, g=1.0, b=0.0, a=0.8) # Green
+        
+        for p1, p2 in links:
+            pt1 = Point(x=p1[0], y=p1[1], z=0.5)
+            pt2 = Point(x=p2[0], y=p2[1], z=0.5)
+            m_links.points.append(pt1)
+            m_links.points.append(pt2)
+        ma.markers.append(m_links)
+
+        # C. Draw Forces (Arrows)
+        for i, (pos, vec) in enumerate(forces):
+            m = Marker()
+            m.header.frame_id = "map"
+            m.header.stamp = self.get_clock().now().to_msg()
+            m.ns = "forces"
+            m.id = id_counter
+            id_counter += 1
+            m.type = Marker.ARROW
+            m.action = Marker.ADD
+            
+            # Start point
+            p_start = Point(x=pos[0], y=pos[1], z=0.5)
+            # End point (scaled by vector)
+            p_end = Point(x=pos[0]+vec[0], y=pos[1]+vec[1], z=0.5)
+            
+            m.points = [p_start, p_end]
+            m.scale.x = 0.05 # Shaft diameter
+            m.scale.y = 0.1 # Head diameter
+            m.scale.z = 0.1 # Head length
+            m.color = ColorRGBA(r=1.0, g=1.0, b=0.0, a=1.0) # Yellow
+            ma.markers.append(m)
+
+        self.vis_pub.publish(ma)
 
 def main(args=None):
     rclpy.init(args=args)
