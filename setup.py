@@ -31,7 +31,8 @@ setup(
             'exploration_map = intermediate.exploration_map:main',
             'drone_trajectory_controller = intermediate.drone_trajectory_controller:main',
             'takeoff_all = intermediate.takeoff_all:main',
-            'frontier_detection = intermediate.frontier_detection:main'
+            'frontier_detection = intermediate.frontier_detection:main',
+            'swarm_colntroller = intermediate.swarm_controller:main'
         ],
     },
 )
