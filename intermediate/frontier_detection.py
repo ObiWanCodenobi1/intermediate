@@ -8,6 +8,7 @@ from custom_interfaces.msg import Target, Targets
 import numpy as np
 import os
 import math
+import cv2 as cv
 from scipy.ndimage import binary_dilation, label, center_of_mass
 
 class Frontier_Detection(Node):
@@ -16,13 +17,28 @@ class Frontier_Detection(Node):
 
         self.NUM_DRONES = int(os.environ.get('NUM_ROBOTS', 10))
         self.SENSOR_RADIUS = 6
-        self.FOV = 60 #field of view in degrees
+        self.fov = 60 #field of view in degrees
         ocgrid_path = os.path.expanduser('~/ros2_ws/src/intermediate/intermediate/oc_grid.npy')
         self.ocgrid3d = np.load(ocgrid_path)
         self.HEIGHT = 3
+        self.res = 0.15
         _, _, self.HEIGHT_IDX = self.world2grid(0, 0, self.HEIGHT)
         self.ocgrid = self.ocgrid3d[:, :, self.HEIGHT_IDX]
-        self.res = 0.15
+        self.x_max = self.ocgrid.shape[0]
+        self.y_max = self.ocgrid.shape[1]
+        self.get_logger().info(f"Occupancy grid loaded with shape: {self.ocgrid.shape}")
+        self.image = np.zeros((self.x_max, self.y_max, 3), dtype=np.uint8)
+
+        for x in range(self.x_max):
+            for y in range(self.y_max):
+                if self.ocgrid[x, y] == 0:
+                    self.image[x, y] = [0, 0, 255]  # Free - White
+                elif self.ocgrid[x, y] == 1:
+                    self.image[x, y] = [255, 0, 0]        # Occupied - Black
+                elif self.ocgrid[x, y] == 2:
+                    self.image[x, y] = [255, 255, 0]      # Explored - Light Gray
+
+        self.map = self.image.copy()
 
         self.cf_poses = {
             f"cf_{i}": {
@@ -66,14 +82,22 @@ class Frontier_Detection(Node):
             x0 = self.cf_poses[f"cf_{drone_id}"]["x"]
             y0 = self.cf_poses[f"cf_{drone_id}"]["y"]
             yaw = self.cf_poses[f"cf_{drone_id}"]["yaw"]
-            for theta in range(-1*self.fov/2,self.fov/2):
+            # Skip if any pose value is None
+            if x0 is None or y0 is None or yaw is None:
+                continue
+            theta = -1*self.fov/2
+            while theta <= self.fov/2:
                 for d in range(self.SENSOR_RADIUS):
                     x = x0 + int(d*math.cos(math.radians(yaw+theta)))
                     y = y0 + int(d*math.sin(math.radians(yaw+theta)))
+                    if x < 0 or x >= self.x_max or y < 0 or y >= self.y_max:
+                        break
                     if(self.ocgrid[x][y]==0):
                         self.ocgrid[x][y]=2
+                        self.image[x][y] = [255, 0, 0]
                     if(self.ocgrid[x][y]==1):
                         break
+                theta += 1
 
     def get_frontier(self,occupancy_grid, unknown_val=0, free_val=2):
         # 1. Create a binary mask of unknown space
@@ -139,6 +163,17 @@ class Frontier_Detection(Node):
         msg.targets = targets
         self.target_publisher.publish(msg)
 
+        # Visualize explored regions using OpenCV
+        vis_img = self.image.copy()
+        # Optionally, draw drone positions
+        for drone_id in range(1, self.NUM_DRONES + 1):
+            x = self.cf_poses[f"cf_{drone_id}"]["x"]
+            y = self.cf_poses[f"cf_{drone_id}"]["y"]
+            if x is not None and y is not None:
+                vis_img[x, y] = [0, 255, 0]  # Mark drone positions in green
+        cv.imshow('Explored Regions', vis_img)
+        cv.waitKey(1)
+
 
 
 def main(args=None):
@@ -152,6 +187,7 @@ def main(args=None):
     # (optional - otherwise it will be done automatically
     # when the garbage collector destroys the node object)
     frontier_detection.destroy_node()
+    cv.destroyAllWindows()
     rclpy.shutdown()
 
 if __name__ == '__main__':

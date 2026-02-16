@@ -19,7 +19,8 @@ class TakeoffClientAsync(Node):
 
     def send_request(self):
         for i in range(1,self.NUM_DRONES+1): 
-            self.takeoff_clients[i].call_async(self.req)
+            self.future = self.takeoff_clients[i].call_async(self.req)
+            rclpy.spin_until_future_complete(self, self.future)
         
 
 
@@ -28,8 +29,8 @@ def main():
 
     minimal_client = TakeoffClientAsync()
     future = minimal_client.send_request()
-    rclpy.spin_until_future_complete(minimal_client, future)
-    response = future.result()
+    # rclpy.spin_until_future_complete(minimal_client, future)
+    # response = future.result()
     minimal_client.destroy_node()
     rclpy.shutdown()
 

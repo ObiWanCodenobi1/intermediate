@@ -32,7 +32,7 @@ setup(
             'drone_trajectory_controller = intermediate.drone_trajectory_controller:main',
             'takeoff_all = intermediate.takeoff_all:main',
             'frontier_detection = intermediate.frontier_detection:main',
-            'swarm_controller: intermediate.swarm_controller:main'
+            'swarm_controller = intermediate.swarm_controller:main'
         ],
     },
 )
