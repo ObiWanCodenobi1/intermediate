@@ -56,12 +56,13 @@ class Frontier_Detection(Node):
         self.timer = self.create_timer(timer_period, self.timer_callback)
 
 
-    def grid2world(self, x, y, z):
-        return ((x * self.res) - 66.5, (y * self.res) - 66.5, (z * self.res) + 0.5)
+    def grid2world(self, x, y, z=0):
+        # Converts grid indices to meters
+        return ((x - 66.5)*self.res, (y - 66.5)*self.res, (z + 0.5) * self.res)
 
-    def world2grid(self, x, y, z):
-        #self.res = 0.15  # Assuming resolution
-        return (int((x + 66.5) / self.res), int((y + 66.5) / self.res), int((z - 0.5) / self.res))
+    def world2grid(self, x, y, z=0):
+        # Converts meters to grid indices
+        return (int(x / self.res + 66.5), int(y/ self.res + 66.5), int(z / self.res - 0.5))
     
     def global_pose_callback(self, msg: PoseStamped, drone_id):
 

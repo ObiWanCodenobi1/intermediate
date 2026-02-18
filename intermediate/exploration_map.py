@@ -39,12 +39,29 @@ class MinimalSubscriber(Node):
 
             
 
-    def listener_callback(self, msg):       
+    def listener_callback(self, msg):
+        # print(msg)
+        max_x = max_y = max_z = -999999
+        min_x = min_y = min_z = 999999       
         for marker in msg.markers:
             for point in marker.points:
+                if(point.x>max_x):
+                    max_x = point.x
+                if(point.y>max_y):
+                    max_y = point.y
+                if(point.z>max_z):
+                    max_z = point.z
+                if(point.x<min_x):
+                    min_x = point.x
+                if(point.y<min_y):
+                    min_y = point.y
+                if(point.z<min_z):
+                    min_z = point.z
+                print(max_x,max_y,max_z)
+                print(min_x,min_y,min_z)
                 self.oc_grid[int(point.x/self.res + 66.5),int(point.y/self.res + 66.5),int(point.z/self.res - 0.5)] = 1
 
-        np.save('oc_grid.npy',self.oc_grid)
+        # np.save('oc_grid.npy',self.oc_grid)
 
     def global_pose_callback(self,msg:PoseStamped,drone_id):
         self.cf_poses[f"cf_{drone_id}"]["position"]["x"] = msg.pose.position.x
