@@ -39,6 +39,7 @@ class global_aruco(Node):
             self.global_pose_subscriptions.append(self.create_subscription(ArucoMarkers, f"/cf_{i}/aruco_markers", lambda msg, drone_id=i: self.global_aruco_callback(msg, drone_id), 10))
 
         self.pub = self.create_publisher(TargetInfo, 'target_found', 10)
+        self.pad_pub = self.create_publisher(TargetInfo, 'landing_pads',10)
         self.detected = []
     
     
@@ -79,7 +80,11 @@ class global_aruco(Node):
             self.target_info.location.z = global_pos[2]
             if marker_id not in self.detected:
                 self.detected.append(marker_id)
-                self.pub.publish(self.target_info)
+                if marker_id < 11:
+                    self.pub.publish(self.target_info)
+                elif marker_id < 21:
+                    self.pad_pub.publish(self.target_info)
+                
             
     def normalize_quaternion(self, quaternion):
         norm = np.linalg.norm(quaternion)
