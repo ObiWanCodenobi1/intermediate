@@ -2,7 +2,7 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 from visualization_msgs.msg import MarkerArray, Marker
-from geometry_msgs.msg import Pose, PoseStamped, Twist
+from geometry_msgs.msg import Pose, PoseStamped, Twist, Point
 from custom_interfaces.msg import Target, Targets
 import numpy as np
 import os
@@ -35,6 +35,9 @@ class APF_Swarm_Controller(Node):
             f"cf_{i}": {"x": None, "y": None, "yaw": None}
             for i in range(1, self.NUM_DRONES + 1)
         }
+
+        self.agv_pose = {"x":None,"y":None}
+        self.agv_pose_sub = self.create_subscription(Point, "AGV/pose", self.agv_pose_callback,10)
 
         self.global_pose_subscriptions = []
         for i in range(1, self.NUM_DRONES + 1):
@@ -72,6 +75,10 @@ class APF_Swarm_Controller(Node):
         self.cf_poses[f"cf_{drone_id}"]["y"] = msg.pose.position.y
         self.cf_poses[f"cf_{drone_id}"]["yaw"] = yaw
 
+    def agv_pose_callback(self,msg):
+        self.agv_pose["x"] = msg.x
+        self.agv_pose["y"] = msg.y
+
     def target_callback(self, msg):
         self.targets = []
         for target in msg.targets:
@@ -80,7 +87,7 @@ class APF_Swarm_Controller(Node):
 
     # --- APF Helper Functions ---
 
-    def get_range_force(self, p1, p2):
+    def get_range_force(self, p1, p2, is_agv=False):
         """Calculates phi_range (Marr Wavelet + Shallow Parabola) """
         diff = p2 - p1
         dist = np.linalg.norm(diff)
@@ -102,6 +109,12 @@ class APF_Swarm_Controller(Node):
         elif dist > self.D_C:
             # Phi = k * d^2 -> Gradient = 2 * k * d
             mag = 2 * self.K_SP * (dist - self.D_C)
+            # AGV TETHER LOGIC:
+            # If the neighbor is the AGV, multiply the attractive force.
+            # This ensures drones don't get left behind.
+            if is_agv:
+                mag *= self.AGV_WEIGHT
+
             force = mag * direction
             
         # 3. Sweet spot (d_s <= d <= d_c) -> Force is 0 
@@ -198,13 +211,22 @@ class APF_Swarm_Controller(Node):
             if self.cf_poses[did]["x"] is None: continue
             positions[did] = np.array([self.cf_poses[did]["x"], self.cf_poses[did]["y"]])
 
+        # Add AGV to positions map if available
+        agv_available = False
+        if self.agv_pose["x"] is not None:
+            positions["agv"] = np.array([self.agv_pose["x"], self.agv_pose["y"]])
+            connections["agv"] = [] # Track AGV connections too
+            agv_available = True
+
+        all_ids = list(positions.keys())
+
         # Build connectivity graph based on Range AND LOS [cite: 180]
-        for i in range(len(drone_ids)):
-            id_a = drone_ids[i]
+        for i in range(len(all_ids)):
+            id_a = all_ids[i]
             if id_a not in positions: continue
             
-            for j in range(i+1, len(drone_ids)):
-                id_b = drone_ids[j]
+            for j in range(i+1, len(all_ids)):
+                id_b = all_ids[j]
                 if id_b not in positions: continue
                 
                 dist = np.linalg.norm(positions[id_a] - positions[id_b])
@@ -246,15 +268,17 @@ class APF_Swarm_Controller(Node):
             else:
                 # Not redundant: Compose with comm vectors 
                 # Calculate recovery forces for ALL other robots (simplified from 'best pair')
-                for other_did in drone_ids:
+                for other_did in all_ids:
                     if did == other_did: continue
                     p_other = positions[other_did]
                     
                     # Range Force
                     f_comm += self.get_range_force(p_curr, p_other)
                     
-                    # LOS Force (only if LOS is threatened/lost)
-                    f_comm += self.get_los_force(p_curr, p_other)
+                    is_agv_link = (other_did == "agv")
+                    
+                    # Range Force (Attraction/Repulsion)
+                    f_comm += self.get_range_force(p_curr, p_other, is_agv=is_agv_link)
                 
                 final_vel = v_high_priority + f_comm
 
