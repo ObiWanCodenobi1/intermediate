@@ -28,7 +28,11 @@ setup(
             'go = intermediate.goto:main',
             'transform = intermediate.aruco_transform:main',
             'map_publisher = intermediate.map_publisher:main',
-            'exploration_map = intermediate.exploration_map:main'
+            'exploration_map = intermediate.exploration_map:main',
+            'drone_trajectory_controller = intermediate.drone_trajectory_controller:main',
+            'takeoff_all = intermediate.takeoff_all:main',
+            'frontier_detection = intermediate.frontier_detection:main',
+            'swarm_controller = intermediate.swarm_controller:main'
         ],
     },
 )

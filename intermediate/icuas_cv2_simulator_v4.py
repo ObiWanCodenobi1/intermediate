@@ -626,7 +626,7 @@ class CombinedExploration:
                 p2 = self._logical_to_display(nodes[v])
                 cv2.line(self.main_image, p1, p2, (0,255,0), 2)
         
-        # Restoration Plan Visualization
+    #     # Restoration Plan Visualization
         if self.restoration_active and self.relocation_plan:
              for idx, (tx, ty) in self.relocation_plan:
                  p_start = self._logical_to_display(self.drone_positions[idx])
@@ -701,7 +701,7 @@ class CombinedExploration:
 
     def run(self):
         self.wait_for_selection()
-        self.run_tests() # Run tests once at start
+        #self.run_tests() # Run tests once at start
 
         while True:
             # 1. Connection Monitoring
